@@ -1,3 +1,6 @@
+# pip install /datafuel/dist/datafuel-0.0.0-py3-none-any.whl
+pip install -r /requirements/requirements.txt
+
 airflow db init
 
 echo "Initiating database with $AIRFLOW_ADMIN_FIRST_NAME $AIRFLOW_ADMIN_LAST_NAME credentials"
@@ -11,8 +14,5 @@ airflow users create \
 
 airflow connections add 'trino' \
     --conn-uri 'presto://amir@trino-coordinator:8080/hive'
-
-# pip install /datafuel/dist/datafuel-0.0.0-py3-none-any.whl
-pip install -r /requirements/requirements.txt
 
 airflow webserver --port 8080

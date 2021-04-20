@@ -1,4 +1,4 @@
-version: '2.1'
+version: '3'
 services:
     redis:
         image: 'redis:5.0.5'
@@ -14,6 +14,19 @@ services:
         #     - PGDATA=/var/lib/postgresql/data/pgdata
         # volumes:
         #     - ./pgdata:/var/lib/postgresql/data/pgdata
+        ports:
+            - "5432:5432"
+        expose:
+            - 5440
+            - 5432
+
+    adminer_container:
+        image: adminer:latest
+        environment: 
+            ADMINER_DEFAULT_SERVER: postgres
+            ADMINER_DESIGN: galkaev
+        ports: 
+          - 5055:8080
 
     webserver:
         image: datafuel/airflow:latest
@@ -28,6 +41,10 @@ services:
             - AIRFLOW_ADMIN_FIRST_NAME=$AIRFLOW_ADMIN_FIRST_NAME
             - AIRFLOW_ADMIN_LAST_NAME=$AIRFLOW_ADMIN_LAST_NAME
             - AIRFLOW_ADMIN_EMAIL=$AIRFLOW_ADMIN_EMAIL
+            - EXECUTOR=Celery
+            - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+            #- AIRFLOW__CELERY__RESULT_BACKEND_SECRET=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
+            #- AIRFLOW__CELERY__RESULT_BACKEND=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
             # - POSTGRES_USER=airflow
             # - POSTGRES_PASSWORD=airflow
             # - POSTGRES_DB=airflow
@@ -35,14 +52,17 @@ services:
         volumes:
             - ./dags:/usr/local/airflow/dags
             - ./airflow_dir/setup/airflow.cfg:${AIRFLOW_USER_HOME}/airflow.cfg
-            - ./airflow_dir/setup/setup.sh:${AIRFLOW_USER_HOME}/setup.sh
+            - ./airflow_dir/setup/webserver_setup.sh:${AIRFLOW_USER_HOME}/webserver_setup.sh
+            - ./requirements/requirements.txt:/requirements/requirements.txt
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         ports:
             - "8080:8080"
         stdin_open: true
         tty: true
-        command: /bin/bash setup.sh
+        command: sh -c "
+            sleep 15 &&
+            /bin/bash ${AIRFLOW_USER_HOME}/webserver_setup.sh"
         # healthcheck:
         #     test: ["CMD-SHELL", "[ -f /usr/local/airflow/airflow-webserver.pid ]"]
         #     interval: 30s
@@ -57,6 +77,7 @@ services:
         environment:
             - EXECUTOR=Celery
             - AIRFLOW__CELERY__RESULT_BACKEND_SECRET=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
+            #- AIRFLOW__CELERY__RESULT_BACKEND=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
             - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
             # - REDIS_PASSWORD=redispass
         volumes:
@@ -71,8 +92,10 @@ services:
         depends_on:
             - webserver
         volumes:
-            - ./dags:/usr/local/airflow/dags
+            - ./dags:${AIRFLOW_USER_HOME}/dags
             - ./airflow_dir/setup/airflow.cfg/:${AIRFLOW_USER_HOME}/airflow.cfg
+            - ./airflow_dir/setup/scheduler_setup.sh:${AIRFLOW_USER_HOME}/scheduler_setup.sh
+            - ./requirements/requirements.txt:/requirements/requirements.txt
             # - ./airflow_dir/airflow.cfg/:${AIRFLOW_USER_HOME}/airflow.cfg
             # - ./airflow_dir/entrypoint.sh:${AIRFLOW_USER_HOME}/entrypoint.sh
             # Uncomment to include custom plugins
@@ -80,12 +103,15 @@ services:
         environment:
             - LOAD_EX=n
             - EXECUTOR=Celery
+            - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+            - AIRFLOW__CELERY__RESULT_BACKEND_SECRET=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
             - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
             # - POSTGRES_USER=airflow
             # - POSTGRES_PASSWORD=airflow
             # - POSTGRES_DB=airflow
-            # - REDIS_PASSWORD=redispass
-        command: airflow scheduler
+        command: sh -c "
+            sleep 25 &&
+            /bin/bash ${AIRFLOW_USER_HOME}/scheduler_setup.sh"
 
     worker:
         image: datafuel/airflow:latest
@@ -93,17 +119,23 @@ services:
         depends_on:
             - scheduler
         volumes:
-            - ./dags:/usr/local/airflow/dags
-            - ./airflow_dir/setup/airflow.cfg:${AIRFLOW_USER_HOME}/airflow.cfg
+            - ./dags:${AIRFLOW_USER_HOME}/dags
+            - ./airflow_dir/setup/airflow.cfg/:${AIRFLOW_USER_HOME}/airflow.cfg
+            - ./airflow_dir/setup/scheduler_setup.sh:${AIRFLOW_USER_HOME}/worker_setup.sh
+            - ./requirements/requirements.txt:/requirements/requirements.txt
             # - ./airflow_dir/airflow.cfg/:${AIRFLOW_USER_HOME}/airflow.cfg
             # - ./airflow_dir/entrypoint.sh:${AIRFLOW_USER_HOME}/entrypoint.sh
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         environment:
             - EXECUTOR=Celery
+            - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
             - AIRFLOW__CELERY__RESULT_BACKEND_SECRET=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
+            #- AIRFLOW__CELERY__RESULT_BACKEND=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
             - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}            # - POSTGRES_USER=airflow
             # - POSTGRES_PASSWORD=airflow
             # - POSTGRES_DB=airflow
             # - REDIS_PASSWORD=redispass
-        command: airflow celery worker
+        command: sh -c "
+            sleep 40 &&
+            /bin/bash ${AIRFLOW_USER_HOME}/worker_setup.sh"
